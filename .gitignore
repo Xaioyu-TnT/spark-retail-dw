@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 数据与产物（体积大，按需本地生成）
+raw/
+raw_real/
+raw_skew/
+warehouse/
+warehouse_v2/
+warehouse_star/
+warehouse_real/
+minio-data/
+logs/
+*.log
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 临时
+_skew_tmp/
+*.tmp
