@@ -100,7 +100,40 @@ DWS 预聚合避免重复扫描明细；ADS 面向业务口径，出问题能逐
 **倾斜为什么不靠调参解决**：倾斜是数据分布问题，加盐把热点 key 拆成多个子 key
 并行处理后合并，比调 `shuffle.partitions` 更根本。
 
-## 6. 已知限制
+## 6. 数据质量与 Hive 外表
+
+**数据质量**（`jobs/check_quality.py`）：五条断言覆盖完整性、唯一性、有效性、时效性、一致性，
+任一失败即 `sys.exit(1)`，调度层可据此阻断下游。
+
+```
+[PASS] 完整性  ODS 100,000 行 vs 源文件 100,000 行
+[PASS] 唯一性  总行数 120,322 vs 主键去重 120,322（重复 0）
+[PASS] 有效性  金额<=0 共 0 行；金额与 数量×单价 不一致 0 行
+[PASS] 时效性  分区 90 个，单日行数 1229~1468，空分区 0 个
+[PASS] 一致性  总行数 120,322 vs 基线 120,322（偏差 0.00%）
+```
+
+**Hive 外表**（`hive/hive_ddl.py`）：用 Spark 内置 Hive 支持（Derby 元数据库）跑真实 DDL，
+把已有 parquet 目录注册成外部分区表：
+
+```sql
+CREATE EXTERNAL TABLE dwd_order_detail_ext (
+  order_id INT, item_id INT, user_id INT, product_id INT,
+  category STRING, region_name STRING, order_status STRING,
+  quantity INT, unit_price DOUBLE, amount DECIMAL(12,2), age_group STRING
+)
+PARTITIONED BY (order_date STRING)
+STORED AS PARQUET
+LOCATION '/home/data/bigdata/jobs/warehouse_v2/dwd_order_detail';
+
+MSCK REPAIR TABLE dwd_order_detail_ext;   -- 自动登记 90 个分区
+```
+
+验证结果：建表后分区为空 → REPAIR 后 90 个分区；查询计划出现
+`PartitionFilters: [(order_date = 2026-01-15)]` 说明分区裁剪生效；
+`DROP TABLE` 前后数据目录文件数均为 362，印证「外部表只删元数据、不删数据」。
+
+## 7. 已知限制
 
 - 模拟业务数据为均匀随机分布，品类占比接近 18%；真实零售数据（`etl_real.py`）才体现长尾。
 - 运行在 local 模式，未验证 YARN/K8s 提交；多任务依赖调度未接入（可用 DolphinScheduler 替换 cron）。
