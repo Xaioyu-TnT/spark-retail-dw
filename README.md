@@ -133,7 +133,30 @@ MSCK REPAIR TABLE dwd_order_detail_ext;   -- 自动登记 90 个分区
 `PartitionFilters: [(order_date = 2026-01-15)]` 说明分区裁剪生效；
 `DROP TABLE` 前后数据目录文件数均为 362，印证「外部表只删元数据、不删数据」。
 
-## 7. 已知限制
+## 7. 调度（DolphinScheduler）
+
+用 DolphinScheduler 3.2.2 接管 cron，实现「增量 ETL → 数据质量校验」的依赖编排：
+
+```
+run_incr（SSH 回宿主机，跑 Spark 增量，14s）
+    │ 成功才继续
+check_quality（SSH 回宿主机，5 条断言，9s）
+    │ 失败
+下游阻断，实例标红
+```
+
+- 定时：`0 0 2 * * ? *`（每天 02:00，Asia/Shanghai），状态 ONLINE
+- 实测：工作流实例 #2 **SUCCESS**，总耗时 24 秒，两个任务退出码均为 0
+- 详细配置、踩坑与面试话术见 [docs/scheduling.md](docs/scheduling.md)
+
+### 踩过的坑
+
+| 现象 | 原因 | 解决 |
+|---|---|---|
+| 找不到 SSH 任务节点 | 该发行版节点列表没有 SSH | SHELL 节点 + 容器内 ssh 命令 |
+| 任务 1 秒失败 exit 127 | 长命令被折行，第二行当命令执行 | 配 `~/.ssh/config` 别名，命令收成一行 |
+| 节点面板置灰 | 工作流上线后背锁定 | 下线 → 编辑 → 保存 → 重新上线 |
+## 8. 已知限制
 
 - 模拟业务数据为均匀随机分布，品类占比接近 18%；真实零售数据（`etl_real.py`）才体现长尾。
 - 运行在 local 模式，未验证 YARN/K8s 提交；多任务依赖调度未接入（可用 DolphinScheduler 替换 cron）。
